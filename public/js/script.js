@@ -3,6 +3,7 @@ var directionsDisplay = new google.maps.DirectionsRenderer(),
     polys = new Array(),
     map = null,
     zoom = 10;
+    markersArray = [];
 
 // Function to draw a GeoJSON polygon
 function drawGeoJSONPolygon(geoJSONFeature) {
@@ -138,6 +139,10 @@ class AutocompleteDirectionsHandler {
         },
         (response, status) => {
           if (status === "OK") {
+            for (var i = 0; i < markersArray.length; i++ ) {
+                markersArray[i].setMap(null);
+              }
+            markersArray.length = 0;
             me.directionsRenderer.setDirections(response);
             console.log(response);
             
@@ -158,6 +163,7 @@ class AutocompleteDirectionsHandler {
                 //            position: myRoute.steps[i].start_point
                             position: routCoordinates[j]
                         })
+                        markersArray.push(marker);
                         break;
                         /*this breaks the loop checking when a point is found inside a polygon 
                     and go check the next one, because knowing that one point of the route is 
