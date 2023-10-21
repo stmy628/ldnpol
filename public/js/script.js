@@ -14,14 +14,15 @@ function drawGeoJSONPolygon(geoJSONFeature) {
             lng: coord[0]
         })),
         strokeColor: '#AA2143',
-        strokeOpacity: 1,
-        strokeWeight: 2,
+        strokeOpacity: 0,
+        strokeWeight: 0,
         fillColor: "#FF6600",
-        fillOpacity: 0.7,
+        fillOpacity: 0.0,
         polyTitle: geoJSONFeature.properties.LSOA11NM
     };
 
     var newPoly = new google.maps.Polygon(options);
+    newPoly.set("risk",geoJSONFeature.properties.Risk);
     newPoly.setMap(map);
     polys.push(newPoly);
     console.log('polys length: ' + polys.length);
@@ -62,39 +63,82 @@ function initializeMap() {
 
     // Fetch and draw GeoJSON polygons
     fetchGeoJSONFile("../data/final_lsoa.geojson");
+    new AutocompleteDirectionsHandler(map);
 }
 
-
+class AutocompleteDirectionsHandler {
+    map;
+    originPlaceId;
+    destinationPlaceId;
+    travelMode;
+    directionsService;
+    directionsRenderer;
+    constructor(map) {
+      this.map = map;
+      this.originPlaceId = "";
+      this.destinationPlaceId = "";
+      this.travelMode = google.maps.TravelMode.WALKING;
+      this.directionsService = new google.maps.DirectionsService();
+      this.directionsRenderer = new google.maps.DirectionsRenderer();
+      this.directionsRenderer.setMap(map);
   
-//Route
-function calcRoute() {
-    console.log('calcRoute...');
-    
-    var start = "Croydon";
-    var end = "Cheshunt";
-    var waypts = [];
-    var waysArray = ["London"];
-    
-    for (var i = 0; i < waysArray.length; i++) {
-        waypts.push({
-            location: waysArray[i],
-            stopover:true
-        });
+      const originInput = document.getElementById("origin-input");
+      const destinationInput = document.getElementById("destination-input");
+      // Specify just the place data fields that you need.
+      const originAutocomplete = new google.maps.places.Autocomplete(
+        originInput,
+        { fields: ["place_id"] },
+      );
+      // Specify just the place data fields that you need.
+      const destinationAutocomplete = new google.maps.places.Autocomplete(
+        destinationInput,
+        { fields: ["place_id"] },
+      );
+  
+      this.setupPlaceChangedListener(originAutocomplete, "ORIG");
+      this.setupPlaceChangedListener(destinationAutocomplete, "DEST");
+      this.map.controls[google.maps.ControlPosition.TOP_LEFT].push(originInput);
+      this.map.controls[google.maps.ControlPosition.TOP_LEFT].push(
+        destinationInput,
+      );
     }
-    console.log('waypoints:');
-    console.log(waypts);
-    
-    var request = {
-        origin: start,
-        destination: end,
-        waypoints: waypts,
-        optimizeWaypoints: true,
-        travelMode: google.maps.TravelMode.DRIVING
-    };
-
-    directionsService.route(request, function(response, status) {
-        if (status == google.maps.DirectionsStatus.OK) {
-            directionsDisplay.setDirections(response);
+    // Sets a listener on a radio button to change the filter type on Places
+    // Autocomplete.
+    setupPlaceChangedListener(autocomplete, mode) {
+      autocomplete.bindTo("bounds", this.map);
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+  
+        if (!place.place_id) {
+          window.alert("Please select an option from the dropdown list.");
+          return;
+        }
+  
+        if (mode === "ORIG") {
+          this.originPlaceId = place.place_id;
+        } else {
+          this.destinationPlaceId = place.place_id;
+        }
+  
+        this.route();
+      });
+    }
+    route() {
+      if (!this.originPlaceId || !this.destinationPlaceId) {
+        return;
+      }
+  
+      const me = this;
+  
+      this.directionsService.route(
+        {
+          origin: { placeId: this.originPlaceId },
+          destination: { placeId: this.destinationPlaceId },
+          travelMode: this.travelMode,
+        },
+        (response, status) => {
+          if (status === "OK") {
+            me.directionsRenderer.setDirections(response);
             console.log(response);
             
             var routCoordinates = fncRouteZoneIntersection(response);//this function populates the routCoordinates with the JSON data of the route.
@@ -104,9 +148,16 @@ function calcRoute() {
                 for (var j = 0; j < routCoordinates.length; j++){
                     // console.log(routCoordinates[j]);
 //                    if (google.maps.geometry.poly.containsLocation(new google.maps.LatLng(routCoordinates[j].k, routCoordinates[j].A), polys[i]) == true){
-                    if (google.maps.geometry.poly.containsLocation(routCoordinates[j], polys[i]) == true){
-                        console.log('inside!');
+                    var polyi = polys[i];
+                    var risk = polys[i].get("risk");
+                    if (google.maps.geometry.poly.containsLocation(routCoordinates[j], polyi) == true &&(risk =="Very dangerous")){
                         exist.push(polys[i].polyTitle);
+                        var marker = new google.maps.Marker({
+                            map: map,
+                            label: "!",
+                //            position: myRoute.steps[i].start_point
+                            position: routCoordinates[j]
+                        })
                         break;
                         /*this breaks the loop checking when a point is found inside a polygon 
                     and go check the next one, because knowing that one point of the route is 
@@ -117,11 +168,15 @@ function calcRoute() {
             
             console.log(exist);
             //alert(exist);
-        }
-    });
+            
+          } else {
+            window.alert("Directions request failed due to " + status);
+          }
+        },
+      );
+    }
+  }
 
-    directionsDisplay.setMap(map); 
-}
 
 function fncRouteZoneIntersection(response) {
     console.log('fncRouteZoneIntersection...');
@@ -131,12 +186,13 @@ function fncRouteZoneIntersection(response) {
     var lngLatCordinates = new Array();
 //    for (var i = 0; i < myRoute.steps.length; i++) {
     for (var i = 0; i < myRoute.length; i++) {
+        /*
         var marker = new google.maps.Marker({
             map: map,
 //            position: myRoute.steps[i].start_point
             position: myRoute[i]
         });
-        
+        */
 //        lngLatCordinates.push(myRoute.steps[i].start_point);
         lngLatCordinates.push(myRoute[i]);
     }
@@ -158,7 +214,7 @@ $(function() {
     // Call the initialization function
     initializeMap();
     //sendGeoJSONForDrawing();
-    calcRoute();
+    //calcRoute();
 
     var drawingManager = new google.maps.drawing.DrawingManager({
         drawingControl: false,
